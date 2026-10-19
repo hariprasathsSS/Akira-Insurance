@@ -1,0 +1,108 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: akira-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-akira}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-akira}
+    ports:
+      # Bind only to localhost per security requirements in Section 13
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-akira} -d ${POSTGRES_DB:-akira}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.1
+    container_name: akira-qdrant
+    restart: unless-stopped
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+    ports:
+      # Bind only to localhost
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  langfuse-web:
+    image: langfuse/langfuse:2
+    container_name: akira-langfuse
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-akira}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-akira}"
+      NEXTAUTH_URL: "http://localhost:3000"
+      NEXTAUTH_SECRET: "${APP_SECRET_KEY:-change-this-in-production}"
+      SALT: "${LANGFUSE_SALT:-salt-change-in-production}"
+      TELEMETRY_ENABLED: "false"
+    ports:
+      # Bind only to localhost
+      - "127.0.0.1:3000:3000"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: akira-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: AKIRA_INSURANCE
+      API_PREFIX: /api/v1
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DEMO_AUTH_ENABLED: ${DEMO_AUTH_ENABLED:-true}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-change-this-in-production}
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-akira}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-akira}"
+      QDRANT_URL: "http://qdrant:6333"
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-akira_policy_chunks}
+      UPLOAD_DIR: /app/storage/policies
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-15}
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      LANGFUSE_HOST: "http://langfuse-web:3000"
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-true}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - policy_storage:/app/storage/policies
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health/live || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+    name: akira_postgres_data
+  qdrant_data:
+    name: akira_qdrant_data
+  policy_storage:
+    name: akira_policy_storage

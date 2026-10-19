@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "akira-insurance"
+version = "0.1.0"
+description = "AKIRA INSURANCE — Enterprise-style Insurance Claims AI POC Backend"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.115.5",
+    "uvicorn[standard]==0.32.1",
+    "pydantic==2.10.3",
+    "pydantic-settings==2.6.1",
+    "sqlalchemy==2.0.36",
+    "alembic==1.14.0",
+    "asyncpg==0.30.0",
+    "psycopg2-binary==2.9.10",
+    "qdrant-client==1.12.1",
+    "langchain-core==0.3.25",
+    "langchain-openai==0.2.14",
+    "langchain-google-genai==2.0.7",
+    "langgraph==0.2.56",
+    "langfuse==2.57.4",
+    "httpx==0.28.1",
+    "python-multipart==0.0.19",
+    "pymupdf==1.25.1",
+    "python-json-logger==2.0.7",
+    "tenacity==9.0.0",
+    "python-dotenv==1.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+    "pytest-asyncio==0.24.0",
+    "pytest-cov==6.0.0",
+    "httpx==0.28.1",
+    "anyio==4.7.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "integration: requires live database/qdrant",
+    "llm: requires live LLM credentials",
+    "slow: slow tests",
+]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["*/tests/*", "*/seed/*", "*/migrations/*"]
