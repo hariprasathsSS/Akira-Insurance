@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --paper: #FAF8F3;
+  --surface: #FFFEFB;
+  --surface-muted: #F3F0E9;
+  --ink: #242A33;
+  --ink-muted: #66707A;
+  --indigo: #344A73;
+  --indigo-deep: #253653;
+  --aoi-wash: #DCE5F1;
+  --sakura: #E8C7CC;
+  --sakura-soft: #F6E8E8;
+  --matcha: #B8C8AD;
+  --matcha-soft: #EAF0E5;
+  --plum: #8D7185;
+  --border: #E5E0D7;
+  --border-strong: #CFC8BC;
+  --success-text: #2F6548;
+  --warning-text: #875A1D;
+  --danger-text: #9B3C43;
+  --danger-soft: #F8E8E7;
+  --focus: #526FA8;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
+  --shadow-soft: 0 8px 28px rgba(44, 54, 70, 0.06);
+  --shadow-card: 0 3px 12px rgba(44, 54, 70, 0.045), 0 16px 36px rgba(44, 54, 70, 0.035);
+  --shadow-dialog: 0 24px 72px rgba(32, 42, 57, 0.18);
+  --ring: 0 0 0 3px rgba(82, 111, 168, 0.24);
+}
+
+body {
+  color: var(--ink);
+  background-color: var(--paper);
+  min-height: 100vh;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+.app-background {
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse at 8% 4%, rgba(232, 199, 204, 0.22), transparent 34%),
+    radial-gradient(ellipse at 94% 14%, rgba(220, 229, 241, 0.48), transparent 32%),
+    radial-gradient(ellipse at 75% 92%, rgba(184, 200, 173, 0.16), transparent 30%),
+    var(--paper);
+}
+
+/* Restrained Washi / Japanese watercolor texture overlay */
+.washi-panel {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-lg);
+}
+
+.washi-panel-muted {
+  background-color: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* Skeleton animation */
+.skeleton {
+  background: linear-gradient(100deg, #F0EEE8 20%, #E7EAF0 38%, #F0EEE8 56%);
+  background-size: 220% 100%;
+  border-radius: 10px;
+  animation: skeleton-drift 1.8s ease-in-out infinite;
+}
+
+@keyframes skeleton-drift {
+  from { background-position: 100% 0; }
+  to { background-position: -120% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    background: #EEECE6;
+  }
+}

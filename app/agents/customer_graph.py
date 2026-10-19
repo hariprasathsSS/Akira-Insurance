@@ -172,14 +172,38 @@ async def _handle_fnol(state: AgentState, **kwargs) -> AgentState:
 
 
 async def _handle_unknown(state: AgentState, **kwargs) -> AgentState:
-    return {
-        **state,
-        "response": (
-            "I'm sorry, I didn't understand your request. "
+    try:
+        from app.llm.factory import get_llm_provider
+        from app.llm.interfaces import LLMMessage
+
+        llm = get_llm_provider()
+        messages = [
+            LLMMessage(
+                role="system",
+                content=(
+                    "You are Akira, a polite and professional AI insurance assistant. "
+                    "Respond helpfully to user greetings, introductions, or general questions. "
+                    "Clearly mention that you can assist with checking policy coverage clauses, "
+                    "premium billing schedules, claim progress, or filing a new claim."
+                ),
+            ),
+            LLMMessage(role="user", content=state["message"][:500]),
+        ]
+        resp = await llm.complete(messages, temperature=0.3, max_tokens=300)
+        answer = resp.content.strip()
+        needs_clarification = False
+    except Exception:
+        answer = (
+            "Hello! I am Akira, your AI insurance assistant. "
             "You can ask me about your plan details, payment status, claim status, "
             "or policy coverage questions."
-        ),
-        "needs_clarification": True,
+        )
+        needs_clarification = True
+
+    return {
+        **state,
+        "response": answer,
+        "needs_clarification": needs_clarification,
     }
 
 

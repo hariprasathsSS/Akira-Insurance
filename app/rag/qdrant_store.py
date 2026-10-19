@@ -23,7 +23,10 @@ def _get_client():
     settings = get_settings()
     try:
         from qdrant_client import QdrantClient  # type: ignore
-        kwargs: Dict[str, Any] = {"url": settings.QDRANT_URL}
+        kwargs: Dict[str, Any] = {
+            "url": settings.QDRANT_URL,
+            "check_compatibility": False,
+        }
         if settings.QDRANT_API_KEY:
             kwargs["api_key"] = settings.QDRANT_API_KEY
         return QdrantClient(**kwargs)
@@ -48,7 +51,7 @@ def _sparse_vector(text: str) -> Dict[str, Any]:
 
 
 def ensure_collection_exists(collection_name: str, dense_dim: int) -> None:
-    """Create Qdrant collection with dense and sparse vectors if missing."""
+    """Create Qdrant collection with dense and sparse vectors if missing, or recreate if dimension changed."""
     try:
         client = _get_client()
         from qdrant_client.models import (  # type: ignore
@@ -58,6 +61,27 @@ def ensure_collection_exists(collection_name: str, dense_dim: int) -> None:
             SparseIndexParams,
         )
         existing = [c.name for c in client.get_collections().collections]
+        if collection_name in existing:
+            try:
+                info = client.get_collection(collection_name)
+                current_vectors = info.config.params.vectors
+                curr_size = None
+                if isinstance(current_vectors, dict) and "dense" in current_vectors:
+                    curr_size = current_vectors["dense"].size
+                elif hasattr(current_vectors, "size"):
+                    curr_size = current_vectors.size
+                if curr_size and curr_size != dense_dim:
+                    logger.warning(
+                        "Collection '%s' dimension mismatch (existing %d, configured %d). Recreating.",
+                        collection_name,
+                        curr_size,
+                        dense_dim,
+                    )
+                    client.delete_collection(collection_name)
+                    existing.remove(collection_name)
+            except Exception as e:
+                logger.warning("Failed checking vector dimension for '%s': %s", collection_name, e)
+
         if collection_name not in existing:
             client.create_collection(
                 collection_name=collection_name,
@@ -66,7 +90,7 @@ def ensure_collection_exists(collection_name: str, dense_dim: int) -> None:
                     "sparse": SparseVectorParams(index=SparseIndexParams(on_disk=False))
                 },
             )
-            logger.info(f"Created Qdrant collection '{collection_name}'.")
+            logger.info(f"Created Qdrant collection '{collection_name}' with dense_dim={dense_dim}.")
     except Exception as exc:
         logger.warning(f"Could not ensure Qdrant collection: {exc}")
 
@@ -119,10 +143,7 @@ def hybrid_search(
             Filter,
             FieldCondition,
             MatchValue,
-            NamedVector,
-            NamedSparseVector,
             SparseVector,
-            SearchRequest,
             Prefetch,
             FusionQuery,
             Fusion,
@@ -174,6 +195,7 @@ def hybrid_search(
                 "version_number": payload.get("version_number"),
                 "policy_type": payload.get("policy_type"),
                 "plan_tier": payload.get("plan_tier"),
+                "document_title": payload.get("document_title", "Policy Document"),
             })
         return hits
     except Exception as exc:

@@ -62,6 +62,12 @@ def retrieve_policy_chunks(
         filters=qdrant_filter if qdrant_filter else None,
     )
 
+    # Normalize RRF scores (Qdrant reciprocal rank fusion scores are <= ~0.033)
+    for h in hits:
+        s = h.get("score", 0.0)
+        if 0 < s < 0.1:
+            h["score"] = min(1.0, s / 0.033)
+
     # Apply minimum score filter
     if min_s:
         hits = [h for h in hits if h.get("score", 0) >= min_s]
@@ -74,7 +80,7 @@ def format_citations(hits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [
         {
             "chunk_id": h["chunk_id"],
-            "document_title": h.get("plan_tier", "Policy Document"),
+            "document_title": h.get("document_title") or h.get("plan_tier", "Policy Document"),
             "section": h.get("section"),
             "page": h.get("page"),
             "excerpt": h["chunk_text"][:300],

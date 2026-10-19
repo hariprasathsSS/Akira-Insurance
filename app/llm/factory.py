@@ -38,8 +38,9 @@ class _OpenAIProvider(BaseLLMProvider):
             max_tokens=max_tokens,
         )
         choice = result.choices[0]
+        content = choice.message.content or getattr(choice.message, "reasoning", "") or ""
         return type("LLMResponse", (), {
-            "content": choice.message.content,
+            "content": content,
             "model": result.model,
             "input_tokens": result.usage.prompt_tokens if result.usage else None,
             "output_tokens": result.usage.completion_tokens if result.usage else None,
@@ -109,14 +110,17 @@ class _SentenceTransformersEmbeddingProvider(EmbeddingProvider):
             try:
                 from sentence_transformers import SentenceTransformer  # type: ignore
                 self._model = SentenceTransformer(self._model_name)
-            except ImportError:
+            except Exception:
                 try:
                     from fastembed import TextEmbedding  # type: ignore
-                    self._model = TextEmbedding(model_name=self._model_name)
-                except ImportError:
+                    fast_name = self._model_name
+                    if fast_name in ("BAAI/bge-m3", "BAAI/bge-large-en", "BAAI/bge-large-en-v1.5"):
+                        fast_name = "BAAI/bge-large-en-v1.5"
+                    self._model = TextEmbedding(model_name=fast_name)
+                except Exception:
                     raise LLMNotConfigured(
-                        "Sentence transformers library is not installed. "
-                        "Install it via: pip install sentence-transformers"
+                        "Embedding provider library is not installed. "
+                        "Install it via: pip install sentence-transformers or fastembed"
                     )
         return self._model
 
@@ -142,8 +146,10 @@ class _SentenceTransformersEmbeddingProvider(EmbeddingProvider):
             )
             return embeddings
         elif hasattr(model, "embed"):
-            generator = model.embed(texts)
-            return [e.tolist() for e in generator]
+            generator = await loop.run_in_executor(
+                None, lambda: [e.tolist() for e in model.embed(texts)]
+            )
+            return generator
         return []
 
 

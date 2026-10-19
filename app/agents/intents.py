@@ -4,7 +4,15 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from app.core.constants import VALID_INTENTS, INTENT_UNKNOWN
+from app.core.constants import (
+    INTENT_CHECK_CLAIM_STATUS,
+    INTENT_CHECK_PAYMENT_STATUS,
+    INTENT_CHECK_PLAN_DETAILS,
+    INTENT_LODGE_CLAIM_FNOL,
+    INTENT_POLICY_RAG_QUERY,
+    INTENT_UNKNOWN,
+    VALID_INTENTS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -14,28 +22,104 @@ def classify_intent_deterministic(message: str) -> Optional[str]:
     Deterministic keyword-based intent classification.
     Used as primary when LLM is not configured, and as validation when LLM is used.
     """
-    msg = message.lower()
+    msg = message.lower().strip()
 
-    if any(kw in msg for kw in ["does my policy cover", "what does", "exclusion", "excluded", "covered", "wording", "clause"]):
-        return "POLICY_RAG_QUERY"
+    # RAG / Coverage wording queries
+    if any(
+        kw in msg
+        for kw in [
+            "does my policy cover",
+            "what does",
+            "exclusion",
+            "excluded",
+            "covered",
+            "wording",
+            "clause",
+            "surgery",
+            "cataract",
+            "hospital",
+            "ayush",
+            "treatment",
+            "maternity",
+            "ambulance",
+            "room rent",
+            "cashless",
+            "pre-existing",
+        ]
+    ):
+        return INTENT_POLICY_RAG_QUERY
 
-    if any(kw in msg for kw in ["deductible", "plan details", "my plan", "my coverage", "sum insured", "idv"]):
-        return "CHECK_PLAN_DETAILS"
+    # FNOL / File claim
+    if any(
+        kw in msg
+        for kw in [
+            "file a claim",
+            "file claim",
+            "how do i claim",
+            "how to file",
+            "lodge",
+            "fnol",
+            "report damage",
+            "report accident",
+            "submit claim",
+            "new claim",
+        ]
+    ):
+        return INTENT_LODGE_CLAIM_FNOL
 
-    if any(kw in msg for kw in ["payment", "due", "bill", "premium", "paid"]):
-        return "CHECK_PAYMENT_STATUS"
+    # Claim status
+    if any(
+        kw in msg
+        for kw in [
+            "claim status",
+            "my claim",
+            "claim id",
+            "clm-",
+            "track claim",
+            "status of claim",
+            "progress of claim",
+        ]
+    ):
+        return INTENT_CHECK_CLAIM_STATUS
 
-    if any(kw in msg for kw in ["claim status", "my claim", "claim id", "clm-"]):
-        return "CHECK_CLAIM_STATUS"
+    # Payment / Billing status
+    if any(
+        kw in msg
+        for kw in [
+            "payment",
+            "due",
+            "bill",
+            "premium",
+            "paid",
+            "invoice",
+            "receipt",
+            "statement",
+            "when is my next payment",
+        ]
+    ):
+        return INTENT_CHECK_PAYMENT_STATUS
 
-    if any(kw in msg for kw in ["file a claim", "file claim", "lodge", "fnol", "report damage", "report accident"]):
-        return "LODGE_CLAIM_FNOL"
+    # Plan details / Limits / Deductible
+    if any(
+        kw in msg
+        for kw in [
+            "deductible",
+            "plan details",
+            "my plan",
+            "my coverage",
+            "sum insured",
+            "idv",
+            "policy tier",
+            "coverage limit",
+        ]
+    ):
+        return INTENT_CHECK_PLAN_DETAILS
 
     if "coverage" in msg or "plan" in msg:
-        return "CHECK_PLAN_DETAILS"
+        return INTENT_CHECK_PLAN_DETAILS
 
     if "accident" in msg or "incident" in msg:
-        return "LODGE_CLAIM_FNOL"
+        return INTENT_LODGE_CLAIM_FNOL
 
     return None
 
@@ -43,23 +127,51 @@ def classify_intent_deterministic(message: str) -> Optional[str]:
 async def classify_intent_with_llm(message: str, llm) -> str:
     """Use LLM for intent classification, validated against allowed enum."""
     from app.llm.interfaces import LLMMessage
+
     system = (
-        "You are an intent classifier for an insurance chatbot. "
-        "Classify the user message into exactly one of these intents: "
-        "CHECK_PLAN_DETAILS, CHECK_PAYMENT_STATUS, POLICY_RAG_QUERY, "
-        "LODGE_CLAIM_FNOL, CHECK_CLAIM_STATUS, UNKNOWN. "
-        "Respond with only the intent name, nothing else."
+        "You are an intent classifier for an insurance assistant. "
+        "Classify the user message into exactly ONE of the following intents:\n"
+        "- POLICY_RAG_QUERY: questions about policy terms, coverage clauses, exclusions, medical treatments covered, or insurance questions.\n"
+        "- CHECK_PLAN_DETAILS: questions about user active plan, deductible, sum insured, or policy tier.\n"
+        "- CHECK_PAYMENT_STATUS: questions about billing, premiums, due date, or payment history.\n"
+        "- CHECK_CLAIM_STATUS: inquiries about existing claim progress, claim number, or status.\n"
+        "- LODGE_CLAIM_FNOL: user wants to file, report, or submit a new claim.\n"
+        "- UNKNOWN: for greetings (e.g. hi, hello), off-topic small talk, or general conversation.\n\n"
+        "Return ONLY the uppercase intent keyword."
     )
     messages = [
         LLMMessage(role="system", content=system),
         LLMMessage(role="user", content=message[:500]),
     ]
     try:
-        resp = await llm.complete(messages, temperature=0.0, max_tokens=20)
-        intent = resp.content.strip().upper()
-        if intent in VALID_INTENTS:
-            return intent
-        logger.warning(f"LLM returned unknown intent '{intent}', falling back.")
+        resp = await llm.complete(messages, temperature=0.0, max_tokens=250)
+        raw_text = resp.content or ""
+        # Strip internal thought/reasoning tags if generated by reasoning models
+        if "</think>" in raw_text:
+            raw_text = raw_text.split("</think>")[-1]
+
+        clean_upper = raw_text.strip().upper()
+
+        # Check for specific intent keywords anywhere in the output
+        if "POLICY_RAG_QUERY" in clean_upper or "POLICY_RAG" in clean_upper:
+            return INTENT_POLICY_RAG_QUERY
+        if "CHECK_PAYMENT_STATUS" in clean_upper or "PAYMENT_STATUS" in clean_upper:
+            return INTENT_CHECK_PAYMENT_STATUS
+        if "CHECK_CLAIM_STATUS" in clean_upper or "CLAIM_STATUS" in clean_upper:
+            return INTENT_CHECK_CLAIM_STATUS
+        if "LODGE_CLAIM_FNOL" in clean_upper or "LODGE_CLAIM" in clean_upper or "FNOL" in clean_upper:
+            return INTENT_LODGE_CLAIM_FNOL
+        if "CHECK_PLAN_DETAILS" in clean_upper or "PLAN_DETAILS" in clean_upper:
+            return INTENT_CHECK_PLAN_DETAILS
+        if "UNKNOWN" in clean_upper:
+            return INTENT_UNKNOWN
+
+        # Direct match against valid intents
+        for valid in VALID_INTENTS:
+            if valid in clean_upper:
+                return valid
+
+        logger.warning(f"LLM returned unknown intent '{clean_upper}', falling back.")
         return INTENT_UNKNOWN
     except Exception as exc:
         logger.warning(f"LLM intent classification failed: {exc}")
